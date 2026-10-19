@@ -11,6 +11,7 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TODA System - Find Available Drivers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/style.css">
@@ -83,9 +84,9 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
                 </div>
                 <div class="user-info">
                     <?php if($loggedIn): ?>
-                        <span class="user-badge"><i class="fas fa-user"></i> <?php echo $username; ?>
+                        <span class="user-badge"><i class="fas fa-user"></i> <?php echo h($username); ?>
                             <span style="background: rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; margin-left:5px; font-size:12px;">
-                                <?php echo ucfirst($role); ?>
+                                <?php echo h(ucfirst($role)); ?>
                             </span>
                         </span>
                     <?php endif; ?>
@@ -99,12 +100,12 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
                         <?php elseif($role=='driver'): ?><i class="fas fa-taxi"></i>
                         <?php else: ?><i class="fas fa-user"></i><?php endif; ?>
                     </div>
-                    <h3>Welcome back, <?php echo $username; ?>!</h3>
+                    <h3>Welcome back, <?php echo h($username); ?>!</h3>
                     <p>
                         <?php if($role=='admin'): ?>
                             You have administrative access. Manage users, view trip logs, and monitor the system.
                         <?php elseif($role=='driver'): ?>
-                            Update your status and view available passengers.
+                            Update your availability so passengers can find you.
                         <?php else: ?>
                             Find available drivers and request rides.
                         <?php endif; ?>
@@ -182,8 +183,11 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
                     <p>Loading available drivers...</p>
                 </div>`;
 
-                fetch('ajax/fetch_driver.php')
-                .then(res => res.json())
+                fetch('ajax/fetch_drivers.php')
+                .then(res => {
+                    if(!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
                 .then(drivers => {
                     container.innerHTML = '';
                     if(drivers.length > 0){
@@ -191,10 +195,17 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
                             const card = document.createElement('div');
                             card.className = 'driver-card passenger-card';
                             card.innerHTML = `
-                                <h4 style="margin:0 0 10px 0;"><i class="fas fa-user-tie"></i> ${driver.fullname}</h4>
-                                <p style="margin:0; color:#64748b;">Status: ${driver.status.charAt(0).toUpperCase() + driver.status.slice(1)}</p>
-                                <button class="nav-btn primary" style="margin-top:10px;" onclick="requestDriver('${driver.fullname}')">Request Driver</button>
+                                <h4 style="margin:0 0 10px 0;"><i class="fas fa-user-tie"></i> ${esc(driver.fullname)}</h4>
+                                <p style="margin:0; color:#64748b;"><i class="fas fa-circle" style="color:#10b981;font-size:10px;"></i> Available</p>
+                                ${driver.plate_no ? `<p style="margin:5px 0 0; color:#64748b;"><i class="fas fa-car"></i> Plate: ${esc(driver.plate_no)}</p>` : ''}
+                                ${driver.contactno ? `<p style="margin:5px 0 0; color:#64748b;"><i class="fas fa-phone"></i> ${esc(driver.contactno)}</p>` : ''}
                             `;
+                            const btn = document.createElement('button');
+                            btn.className = 'nav-btn primary';
+                            btn.style.marginTop = '10px';
+                            btn.textContent = 'Request Driver';
+                            btn.addEventListener('click', () => requestDriver(driver));
+                            card.appendChild(btn);
                             container.appendChild(card);
                         });
                     } else {
@@ -211,7 +222,21 @@ $role = $loggedIn ? $_SESSION['role'] : 'guest';
             loadAvailableDrivers();
             setInterval(loadAvailableDrivers, 20000);
 
-            window.requestDriver = function(name){ alert(`Request sent to ${name}!`); }
+            function esc(str){
+                const div = document.createElement('div');
+                div.textContent = str == null ? '' : String(str);
+                return div.innerHTML;
+            }
+
+            function requestDriver(driver){
+                if(driver.contactno){
+                    if(confirm(`Call ${driver.fullname} at ${driver.contactno}?`)){
+                        window.location.href = 'tel:' + driver.contactno.replace(/[^0-9+]/g, '');
+                    }
+                } else {
+                    alert(`${driver.fullname} has no contact number on file.`);
+                }
+            }
         });
     </script>
 </body>

@@ -28,8 +28,6 @@ body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* Icon Font */
-@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
 /* Sidebar Navigation */
 .sidebar {
@@ -360,12 +358,14 @@ body {
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), white);
 }
 
-.status-card.busy {
+.status-card.busy,
+.status-card.ontrip {
     border-color: rgba(245, 158, 11, 0.3);
     background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), white);
 }
 
-.status-card.unavailable {
+.status-card.unavailable,
+.status-card.offline {
     border-color: rgba(239, 68, 68, 0.3);
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), white);
 }
@@ -399,12 +399,14 @@ body {
     color: var(--success);
 }
 
-.status-card.busy .status-icon {
+.status-card.busy .status-icon,
+.status-card.ontrip .status-icon {
     background: rgba(245, 158, 11, 0.1);
     color: var(--warning);
 }
 
-.status-card.unavailable .status-icon {
+.status-card.unavailable .status-icon,
+.status-card.offline .status-icon {
     background: rgba(239, 68, 68, 0.1);
     color: var(--danger);
 }

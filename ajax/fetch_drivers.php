@@ -1,27 +1,25 @@
 <?php
-require_once '../config.php'; // Adjust path if needed
+// ajax/fetch_drivers.php - Public list of drivers whose latest status is "available"
+require_once '../config.php';
 header('Content-Type: application/json');
 
-// Make sure session is started
-if(session_status() == PHP_SESSION_NONE) session_start();
-
-$result = mysql_query("
-    SELECT fullname, status
-    FROM driver
-    WHERE status='available'
-    ORDER BY fullname ASC
+$result = q("
+    SELECT d.fullname, d.contactno, t.plate_no, a.status, a.last_updated
+    FROM driver d
+    " . LATEST_STATUS_JOIN . "
+    LEFT JOIN tricycle t ON t.tricycleid = d.tricycleid
+    WHERE a.status = 'available'
+    ORDER BY d.fullname ASC
 ");
 
-$data = array();
-
-if($result){
-    while($row = mysql_fetch_assoc($result)){
-        $data[] = $row;
-    }
-    echo json_encode($data);
-} else {
-    // If query fails, return empty array + error message
-    echo json_encode([
-        'error' => 'DB query failed: ' . mysql_error()
-    ]);
+if (!($result instanceof mysqli_result)) {
+    http_response_code(500);
+    echo json_encode(array('error' => 'DB query failed: ' . mysqli_error($conn)));
+    exit;
 }
+
+$data = array();
+while ($row = mysqli_fetch_assoc($result)) {
+    $data[] = $row;
+}
+echo json_encode($data);

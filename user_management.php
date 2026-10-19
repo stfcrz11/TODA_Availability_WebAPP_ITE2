@@ -1,145 +1,107 @@
 <?php
 require_once 'config.php';
-checkLogin();
+requireAdmin();
 
-if(!isAdmin()){
-    die("Access denied. Admins only.");
-}
+$error = '';
+$success = '';
 
-// Handle Add User
-if(isset($_POST['add'])){
-    $username = e($_POST['username']);
-    $password = hash('sha256', e($_POST['password']));
-    $role = e($_POST['role']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!checkCsrf()) {
+        $error = "Your session expired. Please try again.";
 
-    $check = mysql_query("SELECT * FROM users WHERE username='$username'");
-    if(mysql_num_rows($check) > 0){
-        $error = "Username already exists!";
-    } else {
-        mysql_query("INSERT INTO users(username,password,userrole) VALUES('$username','$password','$role')");
-        $success = "User added successfully!";
+    // Handle Add User
+    } elseif (isset($_POST['add'])) {
+        $username   = trim($_POST['username']);
+        $password   = $_POST['password'];
+        $role       = $_POST['role'];
+        $fullname   = trim(isset($_POST['fullname']) ? $_POST['fullname'] : '');
+        $contactno  = trim(isset($_POST['contactno']) ? $_POST['contactno'] : '');
+        $address    = trim(isset($_POST['address']) ? $_POST['address'] : '');
+        $tricycleid = isset($_POST['tricycleid']) ? (int)$_POST['tricycleid'] : 0;
+
+        if ($username === '' || $password === '') {
+            $error = "Username and password are required.";
+        } elseif (!in_array($role, array('admin', 'driver'), true)) {
+            $error = "Invalid role.";
+        } elseif (strlen($password) < 6) {
+            $error = "Password must be at least 6 characters.";
+        } elseif ($role === 'driver' && ($fullname === '' || $tricycleid <= 0)) {
+            $error = "Drivers need a full name and an assigned tricycle.";
+        } elseif (qRow("SELECT userid FROM users WHERE username=?", array($username))) {
+            $error = "Username already exists!";
+        } else {
+            mysqli_begin_transaction($conn);
+            $ok = q("INSERT INTO users (username, password, userrole) VALUES (?, ?, ?)",
+                    array($username, password_hash($password, PASSWORD_DEFAULT), $role));
+            if ($ok && $role === 'driver') {
+                $userid = mysqli_insert_id($conn);
+                $ok = q("INSERT INTO driver (userid, fullname, contactno, address, tricycleid) VALUES (?, ?, ?, ?, ?)",
+                        array($userid, $fullname, $contactno, $address, $tricycleid));
+                if ($ok) {
+                    $ok = q("INSERT INTO availability (driverid, status, last_updated) VALUES (?, 'offline', NOW())",
+                            array(mysqli_insert_id($conn)));
+                }
+            }
+            if ($ok) {
+                mysqli_commit($conn);
+                $success = "User added successfully!";
+            } else {
+                mysqli_rollback($conn);
+                $error = "Could not add user: " . mysqli_error($conn);
+            }
+        }
+
+    // Handle Delete User
+    } elseif (isset($_POST['delete'])) {
+        $id = (int)$_POST['delete'];
+        if ($id === (int)$_SESSION['user_id']) {
+            $error = "You cannot delete your own account.";
+        } else {
+            // driver_status_log and printlogs have no ON DELETE CASCADE, so clear them first
+            mysqli_begin_transaction($conn);
+            $ok = q("DELETE l FROM driver_status_log l INNER JOIN driver d ON l.driverid = d.driverid WHERE d.userid=?", array($id))
+               && q("DELETE FROM printlogs WHERE printed_by=?", array($id))
+               && q("DELETE FROM users WHERE userid=?", array($id));
+            if ($ok) {
+                mysqli_commit($conn);
+                $success = "User deleted.";
+            } else {
+                mysqli_rollback($conn);
+                $error = "Could not delete user: " . mysqli_error($conn);
+            }
+        }
     }
 }
 
-// Handle Delete User
-if(isset($_GET['delete'])){
-    $id = intval($_GET['delete']);
-    mysql_query("DELETE FROM users WHERE userid=$id");
-    header("Location: user_management.php");
-    exit;
-}
+$users = q("
+    SELECT u.userid, u.username, u.userrole, d.fullname, t.plate_no
+    FROM users u
+    LEFT JOIN driver d ON d.driverid = (SELECT MIN(d2.driverid) FROM driver d2 WHERE d2.userid = u.userid)
+    LEFT JOIN tricycle t ON t.tricycleid = d.tricycleid
+    ORDER BY u.userid ASC");
+$userCount = ($users instanceof mysqli_result) ? mysqli_num_rows($users) : 0;
 
-// Fetch all users
-$users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY userid ASC");
+$tricycles = q("SELECT tricycleid, plate_no, color FROM tricycle ORDER BY plate_no");
+
+$activePage = 'users';
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>User Management - TODA System</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="assets/style.css">
 <script src="assets/script.js" defer></script>
 <style>
-    /* Fix for password input in user management */
-    .password-field-wrapper {
+    .field-wrapper {
         position: relative;
         width: 100%;
     }
-    
-    .password-field-wrapper input {
-        width: 100%;
-        padding: 16px 20px 16px 50px;
-        border: 2px solid #e2e8f0;
-        border-radius: 12px;
-        font-size: 16px;
-        transition: all 0.3s ease;
-        background: white;
-        color: #1e293b;
-    }
-    
-    .password-field-wrapper input:focus {
-        outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-    }
-    
-    .password-field-wrapper .input-icon {
-        position: absolute;
-        left: 18px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #64748b;
-        font-size: 18px;
-        z-index: 1;
-    }
-    
-    .password-field-wrapper .toggle-password {
-        position: absolute;
-        right: 15px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: none;
-        border: none;
-        color: #64748b;
-        cursor: pointer;
-        font-size: 18px;
-        padding: 8px;
-        width: 40px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 8px;
-        z-index: 1;
-        transition: all 0.3s ease;
-    }
-    
-    .password-field-wrapper .toggle-password:hover {
-        color: #6366f1;
-        background: #f1f5f9;
-    }
-    
-    /* Fix for username input */
-    .username-field-wrapper {
-        position: relative;
-        width: 100%;
-    }
-    
-    .username-field-wrapper input {
-        width: 100%;
-        padding: 16px 20px 16px 50px;
-        border: 2px solid #e2e8f0;
-        border-radius: 12px;
-        font-size: 16px;
-        transition: all 0.3s ease;
-        background: white;
-        color: #1e293b;
-    }
-    
-    .username-field-wrapper input:focus {
-        outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-    }
-    
-    .username-field-wrapper .input-icon {
-        position: absolute;
-        left: 18px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #64748b;
-        font-size: 18px;
-        z-index: 1;
-    }
-    
-    /* Fix for role select */
-    .role-field-wrapper {
-        position: relative;
-        width: 100%;
-    }
-    
-    .role-field-wrapper select {
+
+    .field-wrapper input,
+    .field-wrapper select {
         width: 100%;
         padding: 16px 20px 16px 50px;
         border: 2px solid #e2e8f0;
@@ -150,16 +112,16 @@ $users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY user
         color: #1e293b;
         appearance: none;
         -webkit-appearance: none;
-        -moz-appearance: none;
     }
-    
-    .role-field-wrapper select:focus {
+
+    .field-wrapper input:focus,
+    .field-wrapper select:focus {
         outline: none;
         border-color: #6366f1;
         box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
     }
-    
-    .role-field-wrapper .input-icon {
+
+    .field-wrapper .input-icon {
         position: absolute;
         left: 18px;
         top: 50%;
@@ -167,141 +129,135 @@ $users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY user
         color: #64748b;
         font-size: 18px;
         z-index: 1;
+        pointer-events: none;
     }
-    
-    /* Remove the default input-with-icon styles that might conflict */
-    .input-with-icon {
-        display: none;
+
+    .field-wrapper .toggle-password {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #64748b;
+        cursor: pointer;
+        font-size: 18px;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        z-index: 1;
+    }
+
+    .field-wrapper .toggle-password:hover {
+        color: #6366f1;
+        background: #f1f5f9;
+    }
+
+    .count-pill {
+        background: #f1f5f9;
+        color: #475569;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 15px;
     }
 </style>
 </head>
 <body>
-    <!-- Sidebar Navigation -->
-    <nav class="sidebar">
-        <div class="sidebar-header">
-            <h1>
-                <i class="fas fa-taxi"></i>
-                <span>TODA System</span>
-            </h1>
-            <div class="user-info">
-                <span><i class="fas fa-user"></i> <?php echo $_SESSION['username']; ?></span>
-                <span class="user-role">
-                    <i class="fas fa-crown"></i>
-                    <?php echo $_SESSION['role']; ?>
-                </span>
-            </div>
-        </div>
-        
-        <div class="sidebar-nav">
-            <a href="dashboard.php" class="nav-item">
-                <i class="fas fa-chart-line"></i>
-                <span>Dashboard</span>
-            </a>
-            
-            <div class="nav-divider"></div>
-            <div style="padding: 0 20px; margin: 20px 0;">
-                <span style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">
-                    <i class="fas fa-crown"></i> Admin Panel
-                </span>
-            </div>
-            <a href="user_management.php" class="nav-item active">
-                <i class="fas fa-user-tie"></i>
-                <span>User Management</span>
-            </a>
-            <a href="trip_logs.php" class="nav-item">
-                <i class="fas fa-clipboard-list"></i>
-                <span>Trip Logs</span>
-            </a>
-            
-            <div class="nav-divider"></div>
-            <a href="logout.php" class="nav-item" style="color: #ef4444;">
-                <i class="fas fa-sign-out-alt"></i>
-                <span>Logout</span>
-            </a>
-        </div>
-    </nav>
+    <?php include 'includes/sidebar.php'; ?>
 
-    <!-- Main Content -->
     <main class="main-content">
         <div class="content-header">
-            <h2>
-                <i class="fas fa-user-tie"></i>
-                User Management
-            </h2>
+            <h2><i class="fas fa-user-tie"></i> User Management</h2>
             <p>Manage system users and their permissions</p>
         </div>
 
         <div class="card">
             <h3><i class="fas fa-user-plus"></i> Add New User</h3>
-            
-            <?php if(isset($error)): ?>
+
+            <?php if ($error): ?>
             <div class="alert alert-danger">
                 <i class="alert-icon fas fa-exclamation-circle"></i>
-                <span><?php echo $error; ?></span>
+                <span><?php echo h($error); ?></span>
             </div>
             <?php endif; ?>
-            
-            <?php if(isset($success)): ?>
+
+            <?php if ($success): ?>
             <div class="alert alert-success">
                 <i class="alert-icon fas fa-check-circle"></i>
-                <span><?php echo $success; ?></span>
+                <span><?php echo h($success); ?></span>
             </div>
             <?php endif; ?>
 
             <form method="post" style="max-width: 500px;">
+                <input type="hidden" name="csrf" value="<?php echo csrfToken(); ?>">
+
                 <div class="form-group">
-                    <label for="username">
-                        <i class="fas fa-user"></i>
-                        Username
-                    </label>
-                    <div class="username-field-wrapper">
-                        <input type="text" 
-                               name="username" 
-                               id="username" 
-                               required 
-                               placeholder="Enter username">
-                        <span class="input-icon">
-                            <i class="fas fa-user"></i>
-                        </span>
+                    <label for="username"><i class="fas fa-user"></i> Username</label>
+                    <div class="field-wrapper">
+                        <input type="text" name="username" id="username" required placeholder="Enter username">
+                        <span class="input-icon"><i class="fas fa-user"></i></span>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="password">
-                        <i class="fas fa-key"></i>
-                        Password
-                    </label>
-                    <div class="password-field-wrapper">
-                        <input type="password" 
-                               name="password" 
-                               id="password" 
-                               required 
-                               placeholder="Enter password">
-                        <span class="input-icon">
-                            <i class="fas fa-key"></i>
-                        </span>
-                        <button type="button" 
-                                class="toggle-password"
-                                onclick="togglePassword('password')"
-                                data-tooltip="Show password">
-                            <i class="fas fa-eye"></i>
-                        </button>
+                    <label for="password"><i class="fas fa-key"></i> Password</label>
+                    <div class="field-wrapper">
+                        <input type="password" name="password" id="password" required minlength="6" placeholder="At least 6 characters">
+                        <span class="input-icon"><i class="fas fa-key"></i></span>
+                        <button type="button" class="toggle-password" data-tooltip="Show password"><i class="fas fa-eye"></i></button>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="role">
-                        <i class="fas fa-user-tag"></i>
-                        User Role
-                    </label>
-                    <div class="role-field-wrapper">
+                    <label for="role"><i class="fas fa-user-tag"></i> User Role</label>
+                    <div class="field-wrapper">
                         <select name="role" id="role" required>
-                            <option value="admin">Administrator</option>
                             <option value="driver">Driver</option>
+                            <option value="admin">Administrator</option>
                         </select>
-                        <span class="input-icon">
-                            <i class="fas fa-user-tag"></i>
-                        </span>
+                        <span class="input-icon"><i class="fas fa-user-tag"></i></span>
+                    </div>
+                </div>
+
+                <div id="driver-fields">
+                    <div class="form-group">
+                        <label for="fullname"><i class="fas fa-id-card"></i> Driver Full Name</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="fullname" id="fullname" placeholder="e.g. Juan Dela Cruz">
+                            <span class="input-icon"><i class="fas fa-id-card"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="contactno"><i class="fas fa-phone"></i> Contact No.</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="contactno" id="contactno" placeholder="09XXXXXXXXX">
+                            <span class="input-icon"><i class="fas fa-phone"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="address"><i class="fas fa-map-marker-alt"></i> Address</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="address" id="address" placeholder="Barangay, City">
+                            <span class="input-icon"><i class="fas fa-map-marker-alt"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="tricycleid"><i class="fas fa-car"></i> Tricycle</label>
+                        <div class="field-wrapper">
+                            <select name="tricycleid" id="tricycleid">
+                                <?php while ($tricycles && $t = mysqli_fetch_assoc($tricycles)): ?>
+                                <option value="<?php echo (int)$t['tricycleid']; ?>"><?php echo h($t['plate_no'] . ($t['color'] ? ' (' . $t['color'] . ')' : '')); ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                            <span class="input-icon"><i class="fas fa-car"></i></span>
+                        </div>
                     </div>
                 </div>
 
@@ -313,7 +269,7 @@ $users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY user
         </div>
 
         <div class="card">
-            <h3><i class="fas fa-users"></i> All Users</h3>
+            <h3><i class="fas fa-users"></i> All Users <span class="count-pill"><i class="fas fa-users"></i> <?php echo $userCount; ?> users</span></h3>
             <div class="table-container">
                 <table>
                     <thead>
@@ -325,64 +281,47 @@ $users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY user
                         </tr>
                     </thead>
                     <tbody>
-                        <?php while($row = mysql_fetch_assoc($users)): ?>
+                        <?php while ($users && $row = mysqli_fetch_assoc($users)): ?>
                         <tr>
-                            <td><strong>#<?php echo $row['userid']; ?></strong></td>
+                            <td><strong>#<?php echo (int)$row['userid']; ?></strong></td>
                             <td>
                                 <div style="display: flex; align-items: center; gap: 12px;">
-                                    <div style="
-                                        width: 44px;
-                                        height: 44px;
-                                        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-                                        border-radius: 50%;
-                                        display: flex;
-                                        align-items: center;
-                                        justify-content: center;
-                                        color: white;
-                                        font-weight: 600;
-                                        font-size: 16px;
-                                    ">
+                                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 16px;">
                                         <i class="fas fa-user"></i>
                                     </div>
                                     <div>
-                                        <div style="font-weight: 600; color: #1e293b;">
-                                            <?php echo htmlspecialchars($row['username']); ?>
-                                        </div>
+                                        <div style="font-weight: 600; color: #1e293b;"><?php echo h($row['username']); ?></div>
                                         <div style="font-size: 12px; color: #64748b;">
-                                            <i class="fas fa-calendar-alt"></i>
-                                            Joined recently
+                                            <?php if ($row['fullname']): ?>
+                                                <i class="fas fa-id-card"></i> <?php echo h($row['fullname']); ?>
+                                                <?php if ($row['plate_no']): ?> · <i class="fas fa-car"></i> <?php echo h($row['plate_no']); ?><?php endif; ?>
+                                            <?php elseif ($row['userrole'] === 'driver'): ?>
+                                                <i class="fas fa-exclamation-triangle"></i> No driver profile
+                                            <?php else: ?>
+                                                <i class="fas fa-crown"></i> System account
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
                             </td>
                             <td>
-                                <?php if($row['userrole'] == 'admin'): ?>
-                                <span class="badge badge-primary">
-                                    <i class="fas fa-crown"></i>
-                                    Administrator
-                                </span>
+                                <?php if ($row['userrole'] === 'admin'): ?>
+                                <span class="badge badge-primary"><i class="fas fa-crown"></i> Administrator</span>
                                 <?php else: ?>
-                                <span class="badge badge-success">
-                                    <i class="fas fa-taxi"></i>
-                                    Driver
-                                </span>
+                                <span class="badge badge-success"><i class="fas fa-taxi"></i> Driver</span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <div style="display: flex; gap: 10px;">
-                                    <a href="?delete=<?php echo $row['userid']; ?>" 
-                                       class="btn"
-                                       onclick="return confirm('Delete user <?php echo htmlspecialchars($row['username']); ?>?')"
-                                       style="background: #ef4444; padding: 8px 16px; font-size: 14px;">
-                                        <i class="fas fa-trash"></i>
-                                        Delete
-                                    </a>
-                                    <button class="btn" style="padding: 8px 16px; font-size: 14px; background: #3b82f6;"
-                                            onclick="editUser(<?php echo $row['userid']; ?>)">
-                                        <i class="fas fa-edit"></i>
-                                        Edit
+                                <?php if ((int)$row['userid'] === (int)$_SESSION['user_id']): ?>
+                                    <span style="color: #64748b; font-size: 14px;">(you)</span>
+                                <?php else: ?>
+                                <form method="post" style="display: inline;" onsubmit="return confirm('Delete user <?php echo h(addslashes($row['username'])); ?>? This also removes their driver profile and trip logs.');">
+                                    <input type="hidden" name="csrf" value="<?php echo csrfToken(); ?>">
+                                    <button type="submit" name="delete" value="<?php echo (int)$row['userid']; ?>" class="btn" style="background: #ef4444; padding: 8px 16px; font-size: 14px;">
+                                        <i class="fas fa-trash"></i> Delete
                                     </button>
-                                </div>
+                                </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endwhile; ?>
@@ -393,62 +332,18 @@ $users = mysql_query("SELECT userid, username, userrole FROM users ORDER BY user
     </main>
 
     <script>
-    // Simple password toggle function
-    function togglePassword(inputId) {
-        const passwordInput = document.getElementById(inputId);
-        const toggleButton = document.querySelector(`[onclick="togglePassword('${inputId}')"]`);
-        const icon = toggleButton.querySelector('i');
-        
-        if (passwordInput.type === 'password') {
-            passwordInput.type = 'text';
-            icon.className = 'fas fa-eye-slash';
-            toggleButton.setAttribute('data-tooltip', 'Hide password');
-        } else {
-            passwordInput.type = 'password';
-            icon.className = 'fas fa-eye';
-            toggleButton.setAttribute('data-tooltip', 'Show password');
-        }
-    }
-    
-    function editUser(userId) {
-        showToast('<i class="fas fa-info-circle"></i> Edit feature coming soon!', 'info');
-    }
-    
-    // Update user count
     document.addEventListener('DOMContentLoaded', function() {
-        const userCount = document.querySelectorAll('tbody tr').length;
-        const countElement = document.createElement('div');
-        countElement.innerHTML = `<i class="fas fa-users"></i> ${userCount} users`;
-        countElement.style.cssText = `
-            background: #f1f5f9;
-            color: #475569;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: 15px;
-        `;
-        
-        const header = document.querySelector('.card h3');
-        if (header) {
-            header.appendChild(countElement);
+        const role = document.getElementById('role');
+        const driverFields = document.getElementById('driver-fields');
+        const fullname = document.getElementById('fullname');
+
+        function syncDriverFields() {
+            const isDriver = role.value === 'driver';
+            driverFields.style.display = isDriver ? '' : 'none';
+            fullname.required = isDriver;
         }
-        
-        // Add focus effects
-        const inputs = document.querySelectorAll('input, select');
-        inputs.forEach(input => {
-            input.addEventListener('focus', function() {
-                this.style.borderColor = '#6366f1';
-                this.style.boxShadow = '0 0 0 4px rgba(99, 102, 241, 0.1)';
-            });
-            
-            input.addEventListener('blur', function() {
-                this.style.borderColor = '#e2e8f0';
-                this.style.boxShadow = 'none';
-            });
-        });
+        role.addEventListener('change', syncDriverFields);
+        syncDriverFields();
     });
     </script>
 </body>

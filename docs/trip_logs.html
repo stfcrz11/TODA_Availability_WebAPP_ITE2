@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trip Logs - TODA System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/style.css">
+    <script src="assets/demo.js"></script>
+    <script src="assets/script.js" defer></script>
+</head>
+<body>
+    <main class="main-content">
+        <div class="content-header">
+            <h2><i class="fas fa-clipboard-list"></i> Trip Logs</h2>
+            <p>View and monitor all transportation trips</p>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+                <h3 style="margin: 0; border: none; padding: 0;"><i class="fas fa-route"></i> All Trips</h3>
+                <div style="display: flex; gap: 15px;">
+                    <button class="btn" id="export-btn" style="padding: 10px 20px; font-size: 14px;">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                    <button class="btn" onclick="location.reload()" style="padding: 10px 20px; font-size: 14px; background: #10b981;">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-hashtag"></i> Trip ID</th>
+                            <th><i class="fas fa-user"></i> Driver</th>
+                            <th><i class="fas fa-car"></i> Vehicle</th>
+                            <th><i class="fas fa-play"></i> Start Time</th>
+                            <th><i class="fas fa-stop"></i> End Time</th>
+                            <th><i class="fas fa-circle"></i> Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trip-rows"></tbody>
+                </table>
+            </div>
+
+            <div id="pager"></div>
+        </div>
+    </main>
+
+    <script>
+    (function() {
+        const s = Demo.requireLogin('admin');
+        Demo.renderSidebar(s, 'trips');
+        Demo.renderBanner();
+
+        const h = Demo.h;
+        const db = Demo.db();
+        const perPage = 15;
+
+        // Same join as trip_logs.php
+        const trips = db.triplogs
+            .map(t => {
+                const d = db.driver.find(x => x.driverid === t.driverid);
+                const tr = Demo.tricycle(t.tricycleid);
+                return d && tr ? Object.assign({ fullname: d.fullname, plate_no: tr.plate_no }, t) : null;
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.triplogid - a.triplogid);
+
+        const totalPages = Math.max(1, Math.ceil(trips.length / perPage));
+        const params = new URLSearchParams(location.search);
+        const page = Math.min(totalPages, Math.max(1, parseInt(params.get('page'), 10) || 1));
+        const offset = (page - 1) * perPage;
+
+        const rows = document.getElementById('trip-rows');
+        if (!trips.length) {
+            rows.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 60px 20px;">
+                <div style="font-size: 64px; margin-bottom: 20px; color: #e2e8f0;"><i class="fas fa-clipboard"></i></div>
+                <h3 style="color: #64748b; margin-bottom: 10px;">No Trip Records</h3>
+                <p style="color: #94a3b8;">Trips are recorded when a driver sets their status to "On Trip".</p>
+            </td></tr>`;
+        } else {
+            rows.innerHTML = trips.slice(offset, offset + perPage).map(t => `
+                <tr>
+                    <td><strong>#${t.triplogid}</strong></td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #1e293b;">${h(t.fullname)}</div>
+                                <div style="font-size: 12px; color: #64748b;"><i class="fas fa-id-badge"></i> Driver ID: ${t.driverid}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span class="badge" style="background: #f1f5f9; color: #475569;"><i class="fas fa-car"></i> ${h(t.plate_no)}</span></td>
+                    <td>
+                        <div style="font-weight: 600; color: #1e293b;"><i class="fas fa-calendar-day"></i> ${Demo.fmtDate(t.trip_start)}</div>
+                        <div style="font-size: 12px; color: #64748b;"><i class="fas fa-clock"></i> ${Demo.fmtTime(t.trip_start)}</div>
+                    </td>
+                    <td>${t.trip_end ? `
+                        <div style="font-weight: 600; color: #1e293b;"><i class="fas fa-calendar-check"></i> ${Demo.fmtDate(t.trip_end)}</div>
+                        <div style="font-size: 12px; color: #64748b;"><i class="fas fa-clock"></i> ${Demo.fmtTime(t.trip_end)}</div>`
+                        : `<span class="badge badge-warning"><i class="fas fa-spinner fa-spin"></i> Ongoing</span>`}
+                    </td>
+                    <td>${t.trip_end
+                        ? `<span class="badge badge-success"><i class="fas fa-check-circle"></i> Completed</span>`
+                        : `<span class="badge badge-warning"><i class="fas fa-clock"></i> In Progress</span>`}
+                    </td>
+                </tr>`).join('');
+
+            document.getElementById('pager').innerHTML = `
+                <div style="margin-top: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0; flex-wrap: wrap; gap: 10px;">
+                    <div style="color: #64748b; font-size: 14px;">
+                        <i class="fas fa-info-circle"></i>
+                        Showing ${offset + 1}–${Math.min(offset + perPage, trips.length)} of ${trips.length} trip records (page ${page} of ${totalPages})
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        ${page > 1 ? `<a class="btn" href="?page=${page - 1}" style="padding: 8px 16px; font-size: 14px; background: #6b7280; text-decoration: none;"><i class="fas fa-chevron-left"></i> Previous</a>` : ''}
+                        ${page < totalPages ? `<a class="btn" href="?page=${page + 1}" style="padding: 8px 16px; font-size: 14px; text-decoration: none;">Next <i class="fas fa-chevron-right"></i></a>` : ''}
+                    </div>
+                </div>`;
+        }
+
+        document.getElementById('export-btn').addEventListener('click', () => {
+            const cell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+            const lines = [['Trip ID', 'Driver ID', 'Driver', 'Plate No', 'Trip Start', 'Trip End', 'Status']]
+                .concat(trips.map(t => [t.triplogid, t.driverid, t.fullname, t.plate_no, t.trip_start, t.trip_end, t.trip_end ? 'Completed' : 'In Progress']))
+                .map(r => r.map(cell).join(','));
+            const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `trip_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        });
+    })();
+    </script>
+</body>
+</html>

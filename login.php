@@ -9,25 +9,34 @@ if(isset($_SESSION['user_id'])){
 
 $error = '';
 if($_SERVER['REQUEST_METHOD'] == 'POST'){
-    $username = e(trim($_POST['username']));
-    $password = e(trim($_POST['password']));
+    $username = isset($_POST['username']) ? trim($_POST['username']) : '';
+    $password = isset($_POST['password']) ? $_POST['password'] : '';
 
     if($username=='' || $password==''){
         $error = "Username and password required.";
     } else {
-        $res = mysql_query("SELECT userid, username, password, userrole FROM users WHERE username='$username' LIMIT 1");
-        if(mysql_num_rows($res)==1){
-            $user = mysql_fetch_assoc($res);
-            if(hash('sha256', $password) === $user['password']){
-                $_SESSION['user_id'] = $user['userid'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['role'] = strtolower($user['userrole']);
-                
-                // Redirect to DASHBOARD after login
-                header("Location: dashboard.php");
-                exit;
-            } else { $error="Invalid username or password."; }
-        } else { $error="Invalid username or password."; }
+        $user = qRow("SELECT userid, username, password, userrole FROM users WHERE username=? LIMIT 1", array($username));
+        $valid = false;
+        if($user){
+            if(password_verify($password, $user['password'])){
+                $valid = true;
+            } elseif(hash_equals($user['password'], hash('sha256', $password))){
+                // Legacy SHA-256 hash: accept once, then upgrade to password_hash()
+                $valid = true;
+                q("UPDATE users SET password=? WHERE userid=?", array(password_hash($password, PASSWORD_DEFAULT), (int)$user['userid']));
+            }
+        }
+
+        if($valid){
+            session_regenerate_id(true);
+            $_SESSION['user_id'] = (int)$user['userid'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = strtolower($user['userrole']);
+
+            header("Location: dashboard.php");
+            exit;
+        }
+        $error = "Invalid username or password.";
     }
 }
 ?>
@@ -35,6 +44,8 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TODA System - Login</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="assets/style.css">
@@ -272,7 +283,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
             <?php if($error): ?>
             <div class="alert alert-danger">
                 <i class="alert-icon fas fa-exclamation-triangle"></i>
-                <span><?php echo $error; ?></span>
+                <span><?php echo h($error); ?></span>
             </div>
             <?php endif; ?>
 

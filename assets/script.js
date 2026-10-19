@@ -83,14 +83,13 @@ function closeMenuOnOutsideClick(event) {
 
 // Set active navigation item based on current page
 function setActiveNavItem() {
-    const currentPage = window.location.pathname.split('/').pop();
     const navItems = document.querySelectorAll('.nav-item');
-    
+    // The server already marked the active item
+    if (document.querySelector('.nav-item.active')) return;
+
+    const currentPage = window.location.pathname.split('/').pop() || 'index.php';
     navItems.forEach(item => {
-        const href = item.getAttribute('href');
-        if (href === currentPage || 
-            (currentPage === '' && href === 'index.php') ||
-            (href && href.includes(currentPage))) {
+        if (item.getAttribute('href') === currentPage) {
             item.classList.add('active');
         }
     });
@@ -100,23 +99,24 @@ function setActiveNavItem() {
 function initPasswordToggles() {
     // Create password toggle buttons for existing password fields
     document.querySelectorAll('input[type="password"]').forEach(input => {
-        if (!input.nextElementSibling || !input.nextElementSibling.classList.contains('toggle-password')) {
+        if (!input.parentNode.querySelector('.toggle-password')) {
             const toggleBtn = document.createElement('button');
             toggleBtn.type = 'button';
             toggleBtn.className = 'toggle-password';
             toggleBtn.innerHTML = '<i class="fas fa-eye"></i>';
             toggleBtn.setAttribute('data-tooltip', 'Show password');
-            
+
             input.parentNode.appendChild(toggleBtn);
         }
     });
-    
+
     // Handle toggle click
     document.addEventListener('click', function(e) {
-        if (e.target.closest('.toggle-password')) {
-            const toggleBtn = e.target.closest('.toggle-password');
-            const input = toggleBtn.previousElementSibling;
-            
+        const toggleBtn = e.target.closest('.toggle-password');
+        if (toggleBtn) {
+            const input = toggleBtn.parentNode.querySelector('input');
+            if (!input) return;
+
             if (input.type === 'password') {
                 input.type = 'text';
                 toggleBtn.innerHTML = '<i class="fas fa-eye-slash"></i>';
@@ -323,87 +323,101 @@ function initStatusControls() {
 }
 
 // Enhanced status update function with icons
+const STATUS_LABELS = { available: 'Available', ontrip: 'On Trip', offline: 'Offline' };
+
+const STATUS_DESCRIPTIONS = {
+    available: '<i class="fas fa-eye"></i> Passengers can see you and request rides',
+    ontrip: '<i class="fas fa-route"></i> You are currently on a trip',
+    offline: '<i class="fas fa-bed"></i> You are not available for rides'
+};
+
 window.updateDriverStatus = function(status) {
-    if (!confirm(`Are you sure you want to change your status to "${status}"?`)) {
+    const label = STATUS_LABELS[status] || status;
+    if (!confirm(`Are you sure you want to change your status to "${label}"?`)) {
         return;
     }
-    
+
     showToast('Updating status... <i class="fas fa-spinner fa-spin"></i>', 'info', 3000);
-    
-    fetch('ajax/update_status', {
+
+    fetch('ajax/update_status.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: `status=${encodeURIComponent(status)}`
     })
-    .then(response => {
-        if (!response.ok) throw new Error('Network response was not ok');
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            showToast('<i class="fas fa-check"></i> Status updated successfully!', 'success');
-            
-            // Update UI
-            document.querySelectorAll('.status-card').forEach(card => {
-                card.classList.remove('active');
-                if (card.dataset.status === status) {
-                    card.classList.add('active');
-                    // Update icon in status card
-                    const icon = card.querySelector('.status-icon i') || card.querySelector('.status-icon');
-                    if (icon) {
-                        icon.className = getStatusIcon(status, true);
-                    }
-                }
-            });
-            
-            // Update current status display
-            updateCurrentStatusDisplay(status);
-            
-        } else {
-            throw new Error('Failed to update status');
+    .then(response => response.json().catch(() => ({})).then(data => {
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Failed to update status');
         }
+        return data;
+    }))
+    .then(() => {
+        showToast('<i class="fas fa-check"></i> Status updated successfully!', 'success');
+
+        document.querySelectorAll('.status-card').forEach(card => {
+            card.classList.toggle('active', card.dataset.status === status);
+        });
+        initializeStatusIcons();
+        updateCurrentStatusDisplay(status);
     })
     .catch(error => {
         console.error('Error:', error);
-        showToast('<i class="fas fa-times"></i> Failed to update status. Please try again.', 'error');
+        showToast(`<i class="fas fa-times"></i> ${escapeHtml(error.message)}`, 'error');
     });
 };
 
 function getStatusIcon(status, isActive = false) {
     switch(status) {
-        case 'available': 
+        case 'available':
             return isActive ? 'fas fa-check-circle' : 'fas fa-user-check';
-        case 'busy': 
+        case 'ontrip':
             return isActive ? 'fas fa-clock' : 'fas fa-user-clock';
-        case 'unavailable': 
+        case 'offline':
             return isActive ? 'fas fa-ban' : 'fas fa-user-slash';
-        default: 
+        default:
             return 'fas fa-user';
     }
 }
 
 function updateCurrentStatusDisplay(status) {
-    const statusDisplay = document.getElementById('current-status');
-    if (statusDisplay) {
-        statusDisplay.textContent = status;
-        statusDisplay.className = `badge badge-${getStatusBadgeClass(status)}`;
-        
-        // Update icon in badge
-        const icon = document.createElement('i');
-        icon.className = getStatusIcon(status);
-        statusDisplay.prepend(icon);
+    const label = STATUS_LABELS[status] || status;
+    const badgeClass = `badge badge-${getStatusBadgeClass(status)}`;
+
+    // Sidebar badge and big badge on the status page
+    ['current-status', 'current-status-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = label;
+            el.className = badgeClass;
+        }
+    });
+
+    const iconLarge = document.getElementById('status-icon-large');
+    if (iconLarge) {
+        iconLarge.className = `status-icon-large ${status}`;
+        iconLarge.innerHTML = `<i class="${getStatusIcon(status)}"></i>`;
+    }
+
+    const desc = document.getElementById('status-description');
+    if (desc && STATUS_DESCRIPTIONS[status]) {
+        desc.innerHTML = STATUS_DESCRIPTIONS[status];
     }
 }
 
 function getStatusBadgeClass(status) {
     switch(status) {
         case 'available': return 'success';
-        case 'busy': return 'warning';
-        case 'unavailable': return 'danger';
+        case 'ontrip': return 'warning';
+        case 'offline': return 'danger';
         default: return 'primary';
     }
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
 }
 
 // Load drivers for passenger view with icons
@@ -418,33 +432,35 @@ window.loadAvailableDrivers = function() {
         </div>
     `;
     
-    fetch('ajax/fetch_drivers')
-        .then(response => response.json())
+    fetch('ajax/fetch_drivers.php')
+        .then(response => {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        })
         .then(drivers => {
             if (drivers.length > 0) {
                 container.innerHTML = `
                     <div class="drivers-grid">
-                        ${drivers.map(driver => `
+                        ${drivers.map((driver, i) => `
                             <div class="driver-card">
                                 <div class="driver-avatar">
-                                    ${getInitials(driver.fullname)}
+                                    ${escapeHtml(getInitials(driver.fullname))}
                                 </div>
                                 <div class="driver-info">
-                                    <h4>${driver.fullname}</h4>
+                                    <h4>${escapeHtml(driver.fullname)}</h4>
                                     <div class="driver-status">
                                         <i class="fas fa-circle" style="font-size: 10px;"></i>
                                         <span class="badge badge-success">
                                             <i class="fas fa-check"></i>
-                                            ${driver.status}
+                                            ${escapeHtml(STATUS_LABELS[driver.status] || driver.status)}
                                         </span>
                                     </div>
                                     <p style="margin-top: 10px; color: #64748b; font-size: 14px;">
-                                        <i class="fas fa-map-marker-alt" style="margin-right: 5px;"></i>
-                                        Available in your area
+                                        <i class="fas fa-car" style="margin-right: 5px;"></i>
+                                        ${escapeHtml(driver.plate_no || 'No plate on file')}
                                     </p>
                                 </div>
-                                <button class="btn" style="padding: 8px 16px; font-size: 14px;" 
-                                        onclick="requestDriver('${driver.fullname}')">
+                                <button class="btn" style="padding: 8px 16px; font-size: 14px;" data-driver-index="${i}">
                                     <i class="fas fa-phone"></i>
                                     Request
                                 </button>
@@ -452,6 +468,9 @@ window.loadAvailableDrivers = function() {
                         `).join('')}
                     </div>
                 `;
+                container.querySelectorAll('[data-driver-index]').forEach(btn => {
+                    btn.addEventListener('click', () => requestDriver(drivers[btn.dataset.driverIndex].fullname));
+                });
                 
                 // Update driver count
                 updateDriverCount();
@@ -478,16 +497,18 @@ window.loadAvailableDrivers = function() {
 
 // Simulate driver request
 window.requestDriver = function(driverName) {
-    showToast(`<i class="fas fa-spinner fa-spin"></i> Contacting ${driverName}...`, 'info');
-    
+    const name = escapeHtml(driverName);
+    showToast(`<i class="fas fa-spinner fa-spin"></i> Contacting ${name}...`, 'info');
+
     // Simulate API call
     setTimeout(() => {
-        showToast(`<i class="fas fa-phone"></i> Connected to ${driverName}!`, 'success');
+        showToast(`<i class="fas fa-phone"></i> Connected to ${name}!`, 'success');
     }, 1500);
 };
 
 function getInitials(name) {
-    return name.split(' ')
+    return String(name || '').split(' ')
+        .filter(part => part)
         .map(part => part[0])
         .join('')
         .toUpperCase()
@@ -495,7 +516,8 @@ function getInitials(name) {
 }
 
 // Load weather data with icons
-window.loadWeather = function(city = 'Santiago') {
+// With no city, api/weather.php defaults to Santiago City, Isabela
+window.loadWeather = function(city) {
     const container = document.getElementById('weather-container');
     if (!container) return;
     
@@ -506,10 +528,10 @@ window.loadWeather = function(city = 'Santiago') {
         </div>
     `;
     
-    fetch(`api/weather.php?city=${encodeURIComponent(city)}`)
+    fetch(city ? `api/weather.php?city=${encodeURIComponent(city)}` : 'api/weather.php')
         .then(response => response.json())
         .then(data => {
-            if (data.main) {
+            if (data.main && data.weather && data.weather.length) {
                 const temp = Math.round(data.main.temp);
                 const weatherIcon = getWeatherIcon(data.weather[0].main);
                 
@@ -518,12 +540,12 @@ window.loadWeather = function(city = 'Santiago') {
                         <div class="weather-header">
                             <div class="weather-icon">${weatherIcon}</div>
                             <div>
-                                <h3><i class="fas fa-map-marker-alt"></i> ${data.name}</h3>
+                                <h3><i class="fas fa-map-marker-alt"></i> ${escapeHtml(data.name)}</h3>
                                 <div class="weather-temp">${temp}°C</div>
                             </div>
                         </div>
                         <p style="opacity: 0.8; margin-bottom: 20px; font-size: 18px;">
-                            <i class="fas fa-cloud"></i> ${data.weather[0].description}
+                            <i class="fas fa-cloud"></i> ${escapeHtml(data.weather[0].description)}
                         </p>
                         <div class="weather-details">
                             <div class="weather-detail">

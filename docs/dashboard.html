@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - TODA System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/style.css">
+    <script src="assets/demo.js"></script>
+    <script src="assets/script.js" defer></script>
+</head>
+<body>
+    <main class="main-content">
+        <div class="content-header">
+            <h2 id="welcome-title">Welcome to Dashboard!</h2>
+            <p>Manage your TODA operations efficiently from this dashboard</p>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-chart-bar"></i> Quick Stats</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-taxi"></i></div>
+                    <div class="stat-value" id="active-drivers-count">0</div>
+                    <div class="stat-label">Available Drivers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-route"></i></div>
+                    <div class="stat-value" id="total-trips">0</div>
+                    <div class="stat-label">Today's Trips</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-value" id="total-users">0</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-spinner"></i></div>
+                    <div class="stat-value" id="ongoing-trips">0</div>
+                    <div class="stat-label">Ongoing Trips</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="driver-actions"></div>
+
+        <div id="weather-container"></div>
+    </main>
+
+    <script>
+    (function() {
+        const s = Demo.requireLogin();
+        const db = Demo.db();
+        Demo.renderSidebar(s, 'dashboard');
+        Demo.renderBanner();
+
+        document.getElementById('welcome-title').textContent = `Welcome to Dashboard, ${s.username}!`;
+        document.getElementById('active-drivers-count').textContent = Demo.availableDrivers().length;
+        document.getElementById('total-trips').textContent = db.triplogs.filter(t => Demo.isToday(t.trip_start)).length;
+        document.getElementById('total-users').textContent = db.users.length;
+        document.getElementById('ongoing-trips').textContent = db.triplogs.filter(t => !t.trip_end).length;
+
+        if (s.role === 'driver') {
+            const driver = Demo.getDriverByUser(s.user_id);
+            const box = document.getElementById('driver-actions');
+            if (!driver) {
+                box.innerHTML = `<div class="card"><h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                    <div class="alert alert-warning"><i class="alert-icon fas fa-exclamation-triangle"></i>
+                    <span>No driver profile is linked to your account. Ask an administrator to set one up.</span></div></div>`;
+            } else {
+                const current = Demo.getDriverStatus(driver.driverid);
+                box.innerHTML = `<div class="card"><h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                    <div class="status-controls">
+                    ${Object.entries(Demo.STATUSES).map(([key, info]) => `
+                        <div class="status-card ${key} ${current === key ? 'active' : ''}" data-status="${key}">
+                            <div class="status-icon"></div>
+                            <div class="status-title">${info.label}</div>
+                            <div class="status-desc">${info.desc}</div>
+                        </div>`).join('')}
+                    </div></div>`;
+            }
+        }
+    })();
+    </script>
+</body>
+</html>

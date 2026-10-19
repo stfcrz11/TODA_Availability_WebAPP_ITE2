@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Management - TODA System</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/demo.js"></script>
+<script src="assets/script.js" defer></script>
+<style>
+    .field-wrapper {
+        position: relative;
+        width: 100%;
+    }
+
+    .field-wrapper input,
+    .field-wrapper select {
+        width: 100%;
+        padding: 16px 20px 16px 50px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 16px;
+        transition: all 0.3s ease;
+        background: white;
+        color: #1e293b;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
+    .field-wrapper input:focus,
+    .field-wrapper select:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    }
+
+    .field-wrapper .input-icon {
+        position: absolute;
+        left: 18px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        font-size: 18px;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    .field-wrapper .toggle-password {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #64748b;
+        cursor: pointer;
+        font-size: 18px;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        z-index: 1;
+    }
+
+    .field-wrapper .toggle-password:hover {
+        color: #6366f1;
+        background: #f1f5f9;
+    }
+
+    .count-pill {
+        background: #f1f5f9;
+        color: #475569;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 15px;
+    }
+</style>
+</head>
+<body>
+    <main class="main-content">
+        <div class="content-header">
+            <h2><i class="fas fa-user-tie"></i> User Management</h2>
+            <p>Manage system users and their permissions</p>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-user-plus"></i> Add New User</h3>
+
+            <div id="form-alert"></div>
+
+            <form id="add-user-form" style="max-width: 500px;">
+                <div class="form-group">
+                    <label for="username"><i class="fas fa-user"></i> Username</label>
+                    <div class="field-wrapper">
+                        <input type="text" name="username" id="username" required placeholder="Enter username">
+                        <span class="input-icon"><i class="fas fa-user"></i></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password"><i class="fas fa-key"></i> Password</label>
+                    <div class="field-wrapper">
+                        <input type="password" name="password" id="password" required minlength="6" placeholder="At least 6 characters">
+                        <span class="input-icon"><i class="fas fa-key"></i></span>
+                        <button type="button" class="toggle-password" data-tooltip="Show password"><i class="fas fa-eye"></i></button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="role"><i class="fas fa-user-tag"></i> User Role</label>
+                    <div class="field-wrapper">
+                        <select name="role" id="role" required>
+                            <option value="driver">Driver</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                        <span class="input-icon"><i class="fas fa-user-tag"></i></span>
+                    </div>
+                </div>
+
+                <div id="driver-fields">
+                    <div class="form-group">
+                        <label for="fullname"><i class="fas fa-id-card"></i> Driver Full Name</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="fullname" id="fullname" placeholder="e.g. Juan Dela Cruz">
+                            <span class="input-icon"><i class="fas fa-id-card"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="contactno"><i class="fas fa-phone"></i> Contact No.</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="contactno" id="contactno" placeholder="09XXXXXXXXX">
+                            <span class="input-icon"><i class="fas fa-phone"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="address"><i class="fas fa-map-marker-alt"></i> Address</label>
+                        <div class="field-wrapper">
+                            <input type="text" name="address" id="address" placeholder="Barangay, City">
+                            <span class="input-icon"><i class="fas fa-map-marker-alt"></i></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="tricycleid"><i class="fas fa-car"></i> Tricycle</label>
+                        <div class="field-wrapper">
+                            <select name="tricycleid" id="tricycleid"></select>
+                            <span class="input-icon"><i class="fas fa-car"></i></span>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">
+                    <i class="fas fa-user-plus"></i>
+                    <span>Add User</span>
+                </button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-users"></i> All Users <span class="count-pill" id="user-count"></span></h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-id-card"></i> ID</th>
+                            <th><i class="fas fa-user"></i> Username</th>
+                            <th><i class="fas fa-user-tag"></i> Role</th>
+                            <th><i class="fas fa-cog"></i> Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-rows"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    (function() {
+        const s = Demo.requireLogin('admin');
+        Demo.renderSidebar(s, 'users');
+        Demo.renderBanner();
+
+        const h = Demo.h;
+        const form = document.getElementById('add-user-form');
+        const role = document.getElementById('role');
+        const driverFields = document.getElementById('driver-fields');
+        const fullname = document.getElementById('fullname');
+
+        document.getElementById('tricycleid').innerHTML = Demo.db().tricycle
+            .slice().sort((a, b) => a.plate_no.localeCompare(b.plate_no))
+            .map(t => `<option value="${t.tricycleid}">${h(t.plate_no + (t.color ? ' (' + t.color + ')' : ''))}</option>`).join('');
+
+        function syncDriverFields() {
+            const isDriver = role.value === 'driver';
+            driverFields.style.display = isDriver ? '' : 'none';
+            fullname.required = isDriver;
+        }
+        role.addEventListener('change', syncDriverFields);
+        syncDriverFields();
+
+        function showAlert(type, message) {
+            document.getElementById('form-alert').innerHTML = `<div class="alert alert-${type}">
+                <i class="alert-icon fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${h(message)}</span></div>`;
+        }
+
+        function renderUsers() {
+            const db = Demo.db();
+            document.getElementById('user-count').innerHTML = `<i class="fas fa-users"></i> ${db.users.length} users`;
+            document.getElementById('user-rows').innerHTML = db.users.slice().sort((a, b) => a.userid - b.userid).map(u => {
+                const d = Demo.getDriverByUser(u.userid);
+                const t = d ? Demo.tricycle(d.tricycleid) : null;
+                let sub;
+                if (d) {
+                    sub = `<i class="fas fa-id-card"></i> ${h(d.fullname)}` + (t ? ` · <i class="fas fa-car"></i> ${h(t.plate_no)}` : '');
+                } else if (u.userrole === 'driver') {
+                    sub = '<i class="fas fa-exclamation-triangle"></i> No driver profile';
+                } else {
+                    sub = '<i class="fas fa-crown"></i> System account';
+                }
+                const roleBadge = u.userrole === 'admin'
+                    ? '<span class="badge badge-primary"><i class="fas fa-crown"></i> Administrator</span>'
+                    : '<span class="badge badge-success"><i class="fas fa-taxi"></i> Driver</span>';
+                const action = u.userid === s.user_id
+                    ? '<span style="color: #64748b; font-size: 14px;">(you)</span>'
+                    : `<button class="btn" data-delete="${u.userid}" style="background: #ef4444; padding: 8px 16px; font-size: 14px;"><i class="fas fa-trash"></i> Delete</button>`;
+                return `<tr>
+                    <td><strong>#${u.userid}</strong></td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #1e293b;">${h(u.username)}</div>
+                                <div style="font-size: 12px; color: #64748b;">${sub}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${roleBadge}</td>
+                    <td>${action}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        document.getElementById('user-rows').addEventListener('click', e => {
+            const btn = e.target.closest('[data-delete]');
+            if (!btn) return;
+            const id = parseInt(btn.dataset.delete, 10);
+            const user = Demo.db().users.find(u => u.userid === id);
+            if (!user || !confirm(`Delete user ${user.username}? This also removes their driver profile and trip logs.`)) return;
+            Demo.deleteUser(id);
+            showAlert('success', 'User deleted.');
+            renderUsers();
+        });
+
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            const v = id => document.getElementById(id).value.trim();
+            const error = Demo.addUser({
+                username: v('username'),
+                password: document.getElementById('password').value,
+                role: role.value,
+                fullname: v('fullname'),
+                contactno: v('contactno'),
+                address: v('address'),
+                tricycleid: parseInt(v('tricycleid'), 10) || 0
+            });
+            if (error) {
+                showAlert('danger', error);
+            } else {
+                showAlert('success', 'User added successfully! You can log in with it right away.');
+                form.reset();
+                syncDriverFields();
+                renderUsers();
+            }
+        });
+
+        renderUsers();
+    })();
+    </script>
+</body>
+</html>
